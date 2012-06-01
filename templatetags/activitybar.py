@@ -3,10 +3,6 @@ from django import template
 
 register = template.Library()
 
-@register.inclusion_tag('videotag/videotag.html')
-def videotagwidget(id, classes):
-    return { 'id': id, 'classes': classes }
-
-@register.inclusion_tag('videotag/postform.html')
-def videotagpostform(id):
-    return { 'id': id }
+@register.inclusion_tag('activitybar/activitybar.html')
+def activitybar_timeline(id, bins):
+    return { 'id': id, 'bins': bins }
