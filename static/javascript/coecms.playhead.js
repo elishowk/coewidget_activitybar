@@ -88,7 +88,9 @@ $.uce.PlayHead.prototype = {
         if (neg) {
             valueText = "-" + valueText;
         }
-
+        if(valueText.match(/NaN/i)) {
+            return "00:00";
+        }
         return (valueText);
     },
 
