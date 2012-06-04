@@ -2,7 +2,6 @@
 *  ActivityBar implements videotag activity timeline visualization
 *  depends on :
 *  * one UCE player widget
-*  * the UCE videotag widget
 *  * ucewidget.js
 *  * underscore.js
 *  * jquery UI
@@ -10,69 +9,181 @@
 *  Copyright (C) 2011 CommOnEcoute,
 */
 
-/*
- * Public MEthod sending the tiker an event
- * to scroll to a given second
- */
-var jumpToCurrentBarTime = _.throttle( function(ucemeeting, bar){
-    if(window.mouseOverHistogramBar === 0) {
-        return;
-    }
-    ucemeeting.trigger({
-        type:"internal.videotag.tickerpause",
-        id: Date.now().toString(),
-        metadata: { time: $(bar).attr('mintime') }
-    });
-}, 1000);
-
 $.uce.ActivityBar = function(){};
 $.uce.ActivityBar.prototype = {
     options: {
         ucemeeting: null,
         uceclient: null,
         player: null,
-        baseHeight: 500,
-        baseWidth: 300,
         bins: 20,
-		color_default: d3.rgb(44, 45, 48),
-		color_personality: d3.rgb(176, 15, 11),
-		color_participant: d3.rgb(101, 40, 78),
-		color_myPost: d3.rgb(33, 144, 121),
-        opacity: 0.5,
-        mouseoutdelay: 7000,
+        class_default: "comment",
+        class_personality: "personnality-comment",
+        class_self: "user-comment",
+        mouseoutdelay: 1000,
         mouseindelay: 1000,
-        detachDelay: 4000,
-        data: {}
+        ticker: null,
+        data: {},
+        duration: null
     },
 
     /*
      * coengine events listening
      */
     meetingsEvents: {
-        "videotag.message.postdispatch" :   "_injectMessage",
-        //"internal.user.received"        :   "_colorUserPoints",
-        "videotag.message.vote"         :   "_handleVoteMessage",
-        "videotag.message.delete"       :   "_handleDeleteMessage",
-        "videotag.message.owndelete"    :   "_handleDeleteOwnMessage"
+        "videotag.message.new"          :   "_handleNewComment",
+        //"internal.user.received"        :   "_colorize",
+        "videotag.message.vote"         :   "_handleVote",
+        "videotag.message.delete"       :   "_handleDeleteComment",
+        "videotag.message.owndelete"    :   "_handleDeleteOwnComment"
     },
     /*
      * UI initialize
      */
     _create: function() {
-		this.vis = d3.select("#"+this.element.attr('id'))
-            .append("svg:svg")
-            .attr("width", this.options.baseWidth)
-            .attr("height", this.options.baseHeight)
-            .attr('class', 'svg-container');
         window.mouseOverHistogramBar = 0;
         window.lastMouseOverHistogram = null;
         window.lastMouseOutHistogram = null;
-		this.options.data = {};
-        var svg = $('.svg-container').detach(),
-            that = this;
-        _.delay(function(){
-            svg.appendTo(that.element);
-        }, this.options.detachDelay);
+        this._injectQueue = [];
+        this._removeQueue = [];
+        this._deferred = $.Deferred();
+        var that = this;
+        this._updateLoop = window.setInterval(function(){
+            that._resolveDeferred();
+        }, 2000);
+        this.options.data = {};
+        this._setTimers();
+        this._setHovers();
+        $(window).resize(function(){ that._setHovers(); });
+    },
+    _setTimers: function() {
+        var duration = this.options.player.data('uceplayer').getDuration();
+        var that = this;
+        if(typeof duration !== "number" || duration <= 0) {
+            window.setTimeout(function(){ that._setTimers(); }, 500);
+            return;
+        }
+        this.options.duration = duration;
+        var binsDuration = Math.ceil(duration / this.options.bins);
+        this.element.find('span').each(function(i){
+            if(typeof binsDuration !== "number") {
+                return;
+            }
+            $(this).attr('data-timer', that._format(Math.round(binsDuration * i * 1000)));
+            $(this).attr('data-currenttime', Math.round(binsDuration * i));
+            $(this).on("mouseover", function() {
+                    window.mouseOverHistogramBar = 1;
+                    if (window.lastMouseOverHistogram!==null) {
+                        window.clearTimeout(window.lastMouseOverHistogram);
+                        window.lastMouseOverHistogram=null;
+                    }
+                    var jumpToBarTimer = _.throttle( function(ucemeeting, bar){
+                        if(window.mouseOverHistogramBar === 0) {
+                            return;
+                        }
+                        ucemeeting.trigger({
+                            type:"internal.videotag.tickerpause",
+                            id: Date.now().toString(),
+                            metadata: { time: parseInt($(bar).attr('data-currenttime'), 10) }
+                        });
+                    }, 1000);
+                    var bar = this;
+                    window.lastMouseOverHistogram = window.setTimeout(jumpToBarTimer, that.options.mouseindelay, that.options.ucemeeting, bar);
+                })
+                .on("mouseout", function() {
+                    window.mouseOverHistogramBar = 0;
+                    if (window.lastMouseOutHistogram!==null) {
+                        window.clearTimeout(window.lastMouseOutHistogram);
+                        window.lastMouseOutHistogram=null;
+                    }
+                    window.lastMouseOutHistogram = window.setTimeout(function(){
+                        if(window.mouseOverHistogramBar == 1) {
+                            return;
+                        }
+                        if (window.lastMouseOverHistogram!==null) {
+                            window.clearTimeout(window.lastMouseOverHistogram);
+                            window.lastMouseOverHistogram=null;
+                        }
+                        that.options.ucemeeting.trigger({
+                            type:"internal.videotag.tickerplay",
+                            id: Date.now().toString()
+                        });
+                    }, that.options.mouseoutdelay);
+                });
+        });
+    },
+    _resolveDeferred: function() {
+        if( this._deferred.state()==="pending") {
+            this._deferred.resolve();
+            return;
+        }
+        if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
+            this._deferred = $.Deferred();
+            return;
+        }
+    },
+    _format: function(timestamp) {
+        var neg = false;
+        if (timestamp < 0) {
+            timestamp *= -1;
+            neg = true;
+        }
+
+        var date = new Date(timestamp);
+        var hours = date.getHours() - 1;
+        if (hours < 10) {
+            hours = "0" + hours;
+        }
+        var minutes = date.getMinutes();
+        if (minutes < 10) {
+            minutes = "0" + minutes;
+        }
+        var seconds = date.getSeconds();
+        if (seconds < 10) {
+            seconds = "0" + seconds;
+        }
+
+        var valueText = minutes + ":" + seconds;
+        if(hours !== "00") {
+            valueText = hours + ":" + minutes + ":" + seconds;
+        }
+        if (neg) {
+            valueText = "-" + valueText;
+        }
+
+        return (valueText);
+    },
+    _setHovers: function(){
+        var $videotickerFrame    = $('#videoticker-frame-comment'),
+            $videotickerTimeline = $('#videoticker-timeline'),
+            videotickerTimelineP = $videotickerTimeline.offset(),
+            $videotickerFrameTotal = $videotickerFrame.find('.videoticker-frame-comment-total'),
+            $videotickerFrameTotalSpan = $videotickerFrame.find('.videoticker-frame-comment-total span'),
+            $videotickerFrameTimer = $videotickerFrame.find('.videoticker-frame-comment-timer');
+
+        this.element.find('span').hover(
+            function()
+            {
+                var $this = $(this),
+                    position = $this.offset(),
+                    comments = $this.attr('data-comment'),
+                    timer = $this.attr('data-timer');
+                    
+                if(parseInt(comments, 10) === 0)
+                {
+                    $videotickerFrameTotal.hide();    
+                }
+                    
+                $videotickerFrameTotalSpan.text(comments);
+                $videotickerFrameTimer.text(timer);
+                
+                $videotickerFrame.addClass('active').css('left', ((position.left - videotickerTimelineP.left) - 10));
+            },
+            function()
+            {
+                $videotickerFrameTotal.show();    
+                $videotickerFrame.removeClass('active');
+            }
+        ); 
     },
     /*
      * Data structure
@@ -82,8 +193,7 @@ $.uce.ActivityBar.prototype = {
             delete this.options.data[event.id];
             return false;
         }
-        var currenttime = Math.round( event.metadata.currentTime );
-        this.options.data[event.id] = currenttime;
+        this.options.data[event.id] = Math.round( event.metadata.currentTime );
     },
     _removeData: function(eventid) {
         if(this.options.data[eventid]===undefined) {
@@ -92,170 +202,112 @@ $.uce.ActivityBar.prototype = {
         }
         delete this.options.data[eventid];
     },
-    /* 
-     * SVG drawing
-     */
-    _updateHistogram: function(event) {
-        var histogram = d3.layout.histogram().bins(this.options.bins)(_.values(this.options.data));
-
-        var color = this.options.color_participant;
-        var width = this.options.baseWidth;
-        var height = this.options.baseHeight;
-        var barHeight = Math.ceil(height/this.options.bins) - 2;
-
-        var y = d3.scale.ordinal()
-            .domain(histogram.map(function(d) { return d.x; }))
-            .rangeRoundBands([0, height]);
-        var x = d3.scale.linear()
-            .domain([0, d3.max(histogram.map(function(d) { return d.y; }))])
-            .range([0, width]);
-        var that = this;
-        var mouseindelay = this.options.mouseindelay;
-        var mouseoutdelay = this.options.mouseoutdelay;
-
-        var rect = this.vis.selectAll("rect").data(histogram);
-        /* newly arrived bars */
-        rect.enter()
-            .append("svg:rect")
-            .attr("height", barHeight)
-            .attr("y", function(d) { return y(d.x); })
-            .attr("x", 0)
-            .attr("mintime", function(d,i) { return _.min(histogram[i]);})
-            .attr("width", function(d) { return x(d.y); })
-            .on("mouseover", function() {
-                window.mouseOverHistogramBar = 1;
-                if (window.lastMouseOverHistogram!==null) {
-                    window.clearTimeout(window.lastMouseOverHistogram);
-                    window.lastMouseOverHistogram=null;
-                }
-                var bar = this;
-                window.lastMouseOverHistogram = window.setTimeout(jumpToCurrentBarTime, mouseindelay, that.options.ucemeeting, bar);
-            })
-            .on("mouseout", function() {
-                window.mouseOverHistogramBar = 0;
-                if (window.lastMouseOutHistogram!==null) {
-                    window.clearTimeout(window.lastMouseOutHistogram);
-                    window.lastMouseOutHistogram=null;
-                }
-                window.lastMouseOutHistogram = window.setTimeout(function(){
-                    if(window.mouseOverHistogramBar == 1) {
-                        return;
-                    }
-                    if (window.lastMouseOverHistogram!==null) {
-                        window.clearTimeout(window.lastMouseOverHistogram);
-                        window.lastMouseOverHistogram=null;
-                    }
-                    that.options.ucemeeting.trigger({
-                        type:"internal.videotag.tickerplay",
-                        id: Date.now().toString()
-                    });
-                }, mouseoutdelay);
-            })
-            .transition().duration(500)
-                .attr("height", barHeight)
-                .attr("y", function(d) { return y(d.x); })
-                .attr("x", 0)
-                .attr("mintime", function(d,i) { return _.min(histogram[i]);})
-                .attr("width", function(d) { return x(d.y); })
-                .attr("fill", color)
-                .attr("fill-opacity", this.options.opacity);
-        /* update existing bars */
-        rect.transition().duration(500)
-            .attr("height", barHeight)
-            .attr("y", function(d) { return y(d.x); })
-            .attr("x", 0)
-            .attr("mintime", function(d,i) { return _.min(histogram[i]);})
-            .attr("width", function(d) { return x(d.y); })
-            .attr("fill", color)
-            .attr("fill-opacity", this.options.opacity);
-        /* removes vanished bars */
-        rect.exit().remove();
-
-        rect.on("mouseover", function() {
-                window.mouseOverHistogramBar = 1;
-                if (window.lastMouseOverHistogram!==null) {
-                    window.clearTimeout(window.lastMouseOverHistogram);
-                    window.lastMouseOverHistogram=null;
-                }
-                var bar = this;
-                window.lastMouseOverHistogram = window.setTimeout(jumpToCurrentBarTime, mouseindelay, that.options.ucemeeting, bar);
-            })
-            .on("mouseout", function() {
-                window.mouseOverHistogramBar = 0;
-                if (window.lastMouseOutHistogram!==null) {
-                    window.clearTimeout(window.lastMouseOutHistogram);
-                    window.lastMouseOutHistogram=null;
-                }
-                window.lastMouseOutHistogram = window.setTimeout(function(){
-                    if(window.mouseOverHistogramBar == 1) {
-                        return;
-                    }
-                    if (window.lastMouseOverHistogram!==null) {
-                        window.clearTimeout(window.lastMouseOverHistogram);
-                        window.lastMouseOverHistogram=null;
-                    }
-                    that.options.ucemeeting.trigger({
-                        type:"internal.videotag.tickerplay",
-                        id: Date.now().toString()
-                    });
-                }, mouseoutdelay);
-            });
+    getCommentBar: function(time) {
+        if(parseInt(time, 10)<=0){
+            return this.element.find('span').first();
+        }
+        var duration = this.options.player.duration,
+            binsDuration = Math.ceil(duration / this.options.bins);
+        return this.element.find("span:eq("+(Math.ceil(parseInt(time, 10)/binsDuration) - 1)+")");
+    },
+    _incrementComment: function() {
+        var event = this._injectQueue.pop();
+        if(event===undefined) {
+            return;
+        }
+        if(this._addData(event)===false) {
+            return;
+        }
+        if(this.options.data[event.id]===undefined) {
+            return;
+        }
+        var $span = this.getCommentBar(event.metadata.currentTime);
+        $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
+        // TODO this._colorize(event);
+    },
+    _decrementComment: function() {
+        var event = this._removeQueue.pop();
+        if(event===undefined) {
+            return;
+        }
+        if(this.options.data[event.metadata.parent]===undefined) {
+            return;
+        }
+        var $span = this.getCommentBar(this.options.data[event.metadata.parent]);
+        $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
+        // TODO this._colorize(event);
+        this._removeData(event.metadata.parent);
     },
     /*
      * FIXME
-     * sets the color of a bar
+     * sets the class of a given bar
      */
-    _colorize: function(event) {
-        if(event.metadata.user===undefined || event.metadata.user.metadata.groups===undefined) {
+    _colorize: function(span) {
+        /*if(event.metadata.user===undefined || event.metadata.user.metadata.groups===undefined) {
             event.color = this.options.color_participant;
             return;
         }
         var user = event.metadata.user;
         var groups = event.metadata.user.metadata.groups.split(",");
-		// user is me
+        // user is me
         if (user.uid == this.options.uceclient.uid){
-			event.color = this.options.color_myPost;
             return;
         }
         // producteur OR personality
         if (_.include(groups, 'producteur') || _.include(groups, 'personnalite')){
-            event.color = this.options.color_personality;
             return;
-        }
-        // participant
-        event.color = this.options.color_participant;
+        }*/
     },
     /*
      * UCE Event Callback
      * injects a message along the waveform
      */
-    _injectMessage: function(event) {
-        if(this._addData(event)!==false) {
-            // TODO this._colorize(event);
-            this._updateHistogram(event);
+    _handleNewComment: function(event) {
+        if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
+            this._deferred = $.Deferred();
+        }
+        this._injectQueue.push($.extend(true, {}, event));
+        this._deferred.done(this._incrementComment());
+        if(this.options.duration!==null){
+            this._resolveDeferred();
             return;
         }
-    },
+        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
+            this.options.duration = this.options.player.data('uceplayer').getDuration();
+            this._resolveDeferred();
+        } 
 
+    },
     /*
      * Update Votes Viz
      * TODO
      */
-    _handleVoteMessage: function(event) {
+    _handleVote: function(event) {
     },
     /*
-    * Delete a Point
+    * Delete a comment
     */
-    _handleDeleteMessage: function(event) {
-        if(this._removeData(event.metadata.parent)!==false) {
-            this._updateHistogram(event);
+    _handleDeleteComment: function(event) {
+        if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
+            this._deferred = $.Deferred();
+        }
+        this._removeQueue.push($.extend(true, {}, event));
+        this._deferred.done(this._decrementComment());
+        if(this.options.duration!==null){
+            this._resolveDeferred();
+            return;
+        }
+        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
+            this.options.duration = this.options.player.data('uceplayer').getDuration();
+            this._resolveDeferred();
+            return;
         }
     },
     /**
-     * Delete a Point
+     * Delete the user's comment
     */
-    _handleDeleteOwnMessage: function(event) {
-        this._handleDeleteMessage(event);
+    _handleDeleteOwnComment: function(event) {
+        this._handleDeleteComment(event);
     },
     destroy: function() {
         this.element.find('*').remove();
