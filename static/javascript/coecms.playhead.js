@@ -46,7 +46,7 @@ $.uce.PlayHead.prototype = {
         }
         this.element.css({
             "left": this.options.baseWidth*(percent/100)
-        });
+        }).text(this._formatTime(currentTime*1000));
     },
 
     destroy: function() {
@@ -54,10 +54,40 @@ $.uce.PlayHead.prototype = {
         this.element.find('*').remove();
         $.Widget.prototype.destroy.apply(this, arguments); // default destroy
     },
-    
     resize: function() {
         this.options.baseWidth = $('#videoticker-timeline').width();
-    }
+    },
+    _formatTime: function(timestamp) {
+        var neg = false;
+        if (timestamp < 0) {
+            timestamp *= -1;
+            neg = true;
+        }
+
+        var date = new Date(timestamp);
+        var hours = date.getHours() - 1;
+        if (hours < 10) {
+            hours = "0" + hours;
+        }
+        var minutes = date.getMinutes();
+        if (minutes < 10) {
+            minutes = "0" + minutes;
+        }
+        var seconds = date.getSeconds();
+        if (seconds < 10) {
+            seconds = "0" + seconds;
+        }
+
+        var valueText = minutes + ":" + seconds;
+        if(hours !== "00") {
+            valueText = hours + ":" + minutes + ":" + seconds;
+        }
+        if (neg) {
+            valueText = "-" + valueText;
+        }
+
+        return (valueText);
+    },
 
 };
 $.uce.widget("playhead", new $.uce.PlayHead());
