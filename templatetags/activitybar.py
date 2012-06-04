@@ -27,3 +27,7 @@ def get_range( value ):
 @register.inclusion_tag('activitybar/activitybar.html')
 def activitybar_timeline(id, bins):
     return { 'id': id, 'bins': bins }
+
+@register.inclusion_tag('activitybar/playhead.html')
+def activitybar_playhead(id):
+    return { 'id': id }
