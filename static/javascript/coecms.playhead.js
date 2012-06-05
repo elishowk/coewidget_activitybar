@@ -58,6 +58,9 @@ $.uce.PlayHead.prototype = {
         this.options.baseWidth = $('#videoticker-timeline').width();
     },
     _formatTime: function(timestamp) {
+        if(typeof timestamp !== "number") {
+            return "00:00";
+        }
         var neg = false;
         if (timestamp < 0) {
             timestamp *= -1;
@@ -85,7 +88,9 @@ $.uce.PlayHead.prototype = {
         if (neg) {
             valueText = "-" + valueText;
         }
-
+        if(valueText.match(/NaN/i)) {
+            return "00:00";
+        }
         return (valueText);
     },
 
