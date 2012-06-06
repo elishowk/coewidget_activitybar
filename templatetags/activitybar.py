@@ -24,6 +24,14 @@ def get_range( value ):
   """
   return range( value )
 
+@register.inclusion_tag('activitybar/activitybarscripts.html')
+def activitybar_scripts():
+    return {}
+
+@register.inclusion_tag('activitybar/activitybarcss.html')
+def activitybar_css():
+    return {}
+
 @register.inclusion_tag('activitybar/activitybar.html')
 def activitybar_timeline(id, bins):
     return { 'id': id, 'bins': bins }

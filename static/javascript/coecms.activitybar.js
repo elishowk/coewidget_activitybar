@@ -16,12 +16,12 @@ $.uce.ActivityBar.prototype = {
         uceclient: null,
         player: null,
         bins: 20,
+        speakers : [],
         class_default: "comment",
         class_personality: "personnality-comment",
         class_self: "user-comment",
         mouseoutdelay: 1000,
         mouseindelay: 1000,
-        ticker: null,
         data: {},
         duration: null
     },
@@ -31,7 +31,7 @@ $.uce.ActivityBar.prototype = {
      */
     meetingsEvents: {
         "videotag.message.new"          :   "_handleNewComment",
-        //"internal.user.received"        :   "_colorize",
+        "internal.roster.update"        :   "_colorize",
         "videotag.message.vote"         :   "_handleVote",
         "videotag.message.delete"       :   "_handleDeleteComment",
         "videotag.message.owndelete"    :   "_handleDeleteOwnComment"
@@ -154,7 +154,7 @@ $.uce.ActivityBar.prototype = {
     },
     _setHovers: function(){
         var $videotickerFrame    = $('#videoticker-frame-comment'),
-            $videotickerTimeline = $('#videoticker-timeline'),
+            $videotickerTimeline = this.element,
             videotickerTimelineP = $videotickerTimeline.offset(),
             $videotickerFrameTotal = $videotickerFrame.find('.videoticker-frame-comment-total'),
             $videotickerFrameTotalSpan = $videotickerFrame.find('.videoticker-frame-comment-total span'),
@@ -202,7 +202,13 @@ $.uce.ActivityBar.prototype = {
         }
         delete this.options.data[eventid];
     },
-    getCommentBar: function(time) {
+    _getCommentBar: function(event) {
+        var time = null;
+        if(event.metadata.parrent !== undefined) {
+            time = this.options.data[event.metadata.parent];
+        } else {
+            time = this.options.data[event.id];
+        }
         if(parseInt(time, 10)<=0){
             return this.element.find('span').first();
         }
@@ -221,9 +227,9 @@ $.uce.ActivityBar.prototype = {
         if(this.options.data[event.id]===undefined) {
             return;
         }
-        var $span = this.getCommentBar(event.metadata.currentTime);
+        var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
-        // TODO this._colorize(event);
+        this._colorize(event, $span);
     },
     _decrementComment: function() {
         var event = this._removeQueue.pop();
@@ -233,30 +239,50 @@ $.uce.ActivityBar.prototype = {
         if(this.options.data[event.metadata.parent]===undefined) {
             return;
         }
-        var $span = this.getCommentBar(this.options.data[event.metadata.parent]);
+        var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
-        // TODO this._colorize(event);
+        this._colorize(event, $span);
         this._removeData(event.metadata.parent);
     },
     /*
-     * FIXME
-     * sets the class of a given bar
+     * sets the class and color
      */
-    _colorize: function(span) {
-        /*if(event.metadata.user===undefined || event.metadata.user.metadata.groups===undefined) {
-            event.color = this.options.color_participant;
+    _colorize: function(event, span) {
+        if(span===undefined) {
+            span = this._getCommentBar(event);
+        }
+        if(span.attr("data-comment")==="0") {
+            span.attr("class", "");
+        } else {
+            span.addClass(this.options.class_default);
+        }
+        var users = this.options.roster.getUsersState();
+        if (_.isObject(users)!==true){
             return;
         }
-        var user = event.metadata.user;
-        var groups = event.metadata.user.metadata.groups.split(",");
+        var user = users[event.from];
+        if(_.isBoolean(user)===true || user === undefined) {
+			return;
+        }
+        this._updateGroup(user, span);
+    },
+    _updateGroup: function(user, element) {
+        if(user.metadata===undefined || user.metadata.groups===undefined) {
+            return;
+        }
+        var groups = user.metadata.groups.split(",");
+        // producteur OR personality
+        if (_.include(this.options.speakers, user.uid)){
+            element.removeClass(this.options.class_default);
+            element.addClass(this.options.class_personality);
+            return;
+        }
         // user is me
         if (user.uid == this.options.uceclient.uid){
+            element.removeClass(this.options.class_default);
+            element.addClass(this.options.class_self);
             return;
         }
-        // producteur OR personality
-        if (_.include(groups, 'producteur') || _.include(groups, 'personnalite')){
-            return;
-        }*/
     },
     /*
      * UCE Event Callback
