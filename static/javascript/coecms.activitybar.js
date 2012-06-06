@@ -43,6 +43,7 @@ $.uce.ActivityBar.prototype = {
         window.mouseOverHistogramBar = 0;
         window.lastMouseOverHistogram = null;
         window.lastMouseOutHistogram = null;
+        this.options.data = {};
         this._injectQueue = [];
         this._removeQueue = [];
         this._deferred = $.Deferred();
@@ -50,7 +51,6 @@ $.uce.ActivityBar.prototype = {
         this._updateLoop = window.setInterval(function(){
             that._resolveDeferred();
         }, 2000);
-        this.options.data = {};
         this._setTimers();
         this._setHovers();
         $(window).resize(function(){ that._setHovers(); });
@@ -112,8 +112,14 @@ $.uce.ActivityBar.prototype = {
         });
     },
     _resolveDeferred: function() {
+        if(this.options.duration===null){
+            if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
+                this.options.duration = this.options.player.data('uceplayer').getDuration();
+                return;
+            }
+        }
         if( this._deferred.state()==="pending") {
-            this._deferred.resolve();
+            this._deferred.resolveWith(this);
             return;
         }
         if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
@@ -203,20 +209,26 @@ $.uce.ActivityBar.prototype = {
         delete this.options.data[eventid];
     },
     _getCommentBar: function(event) {
-        var time = null;
-        if(event.metadata.parrent !== undefined) {
-            time = this.options.data[event.metadata.parent];
+        var id = null;
+        if(event.metadata.parent !== undefined) {
+            id = event.metadata.parent;
         } else {
-            time = this.options.data[event.id];
+            id = event.id;
         }
-        if(parseInt(time, 10)<=0){
+        var time = parseInt(this.options.data[id], 10);
+        if(time<=0){
             return this.element.find('span').first();
         }
-        var duration = this.options.player.duration,
+        var duration = this.options.duration,
             binsDuration = Math.ceil(duration / this.options.bins);
-        return this.element.find("span:eq("+(Math.ceil(parseInt(time, 10)/binsDuration) - 1)+")");
+        var foundbar = this.element.find("span:eq("+(Math.ceil(time/binsDuration) - 1)+")");
+        return foundbar;
     },
     _incrementComment: function() {
+        if(this.options.duration === null) {
+            this._deferred.done(this._incrementComment);
+            return;
+        }
         var event = this._injectQueue.pop();
         if(event===undefined) {
             return;
@@ -229,9 +241,14 @@ $.uce.ActivityBar.prototype = {
         }
         var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
+        $span.data(event.id, event.metadata.currentTime);
         this._colorize(event, $span);
     },
     _decrementComment: function() {
+        if(this.options.duration === null) {
+            this._deferred.done(this._decrementComment);
+            return;
+        }
         var event = this._removeQueue.pop();
         if(event===undefined) {
             return;
@@ -241,6 +258,7 @@ $.uce.ActivityBar.prototype = {
         }
         var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
+        $span.removeData(event.metadata.parent);
         this._colorize(event, $span);
         this._removeData(event.metadata.parent);
     },
@@ -289,20 +307,8 @@ $.uce.ActivityBar.prototype = {
      * injects a message along the waveform
      */
     _handleNewComment: function(event) {
-        if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
-            this._deferred = $.Deferred();
-        }
         this._injectQueue.push($.extend(true, {}, event));
         this._deferred.done(this._incrementComment());
-        if(this.options.duration!==null){
-            this._resolveDeferred();
-            return;
-        }
-        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
-            this.options.duration = this.options.player.data('uceplayer').getDuration();
-            this._resolveDeferred();
-        } 
-
     },
     /*
      * Update Votes Viz
@@ -314,20 +320,8 @@ $.uce.ActivityBar.prototype = {
     * Delete a comment
     */
     _handleDeleteComment: function(event) {
-        if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
-            this._deferred = $.Deferred();
-        }
         this._removeQueue.push($.extend(true, {}, event));
         this._deferred.done(this._decrementComment());
-        if(this.options.duration!==null){
-            this._resolveDeferred();
-            return;
-        }
-        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
-            this.options.duration = this.options.player.data('uceplayer').getDuration();
-            this._resolveDeferred();
-            return;
-        }
     },
     /**
      * Delete the user's comment
