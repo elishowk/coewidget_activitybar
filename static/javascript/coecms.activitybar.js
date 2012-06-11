@@ -121,7 +121,7 @@ $.uce.ActivityBar.prototype = {
             }
         }
         if( this._deferred.state()==="pending") {
-            var pipe = this._deferred.pipe(function(){ console.log("pip done"); });
+            var pipe = this._deferred.pipe(function(){ });
             this._deferred.resolveWith(this);
             pipe.done($.proxy(this._updateAllGroups, this));
             this._deferred = $.Deferred();
