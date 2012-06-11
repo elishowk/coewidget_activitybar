@@ -3,7 +3,6 @@
 ------------------------- */
 	
 .videoticker-timeline-wrapper { 
-	background:#323235;
 	position:absolute;
 	padding:0;
 	overflow:hidden;
@@ -12,7 +11,7 @@
 	top:20px;
 	left:20px;
 	right:20px;
-	border-bottom:1px solid #393839;
+	border-bottom:1px solid;
 	border-radius: 5px; 
 	-webkit-border-radius: 5px; 
 	-moz-border-radius: 5px;
@@ -35,6 +34,7 @@
 }
 
 #videoticker-timeline span {
+	background:#323235;
 	display:block;
 	float:left;
 	height:100%;
