@@ -35,6 +35,11 @@ $.uce.ActivityBar.prototype = {
         "videotag.message.vote"         :   "_handleVote",
         "videotag.message.delete"       :   "_handleDeleteComment",
         "videotag.message.owndelete"    :   "_handleDeleteOwnComment"
+/*        "pseudolivemanager.live.open"    : "_handleOpen",
+        "pseudolivemanager.live.close"   : "_handleClose",
+        "livemanager.live.open"          : "_handleOpen",
+        "livemanager.live.close"         : "_handleClose"
+*/
     },
     /*
      * UI initialize
@@ -359,6 +364,20 @@ $.uce.ActivityBar.prototype = {
     */
     _handleDeleteOwnComment: function(event) {
         this._handleDeleteComment(event);
+    },
+    /*
+     * records unixtimes for starting and ending of a live
+     */
+    _handleOpen: function(event) {
+        this.options.endLive = null;
+        if(event.metadata.unixtime) {
+            this.options.startLive = event.metadata.unixtime;
+        }
+    },
+    _handleClose: function(event) {
+        if(event.metadata.unixtime && typeof this.options.startLive==="number") {
+            this.options.duration = Math.round((event.metadata.unixtime - this.options.startLive)/1000);
+        }
     },
     destroy: function() {
         this.element.find('*').remove();
