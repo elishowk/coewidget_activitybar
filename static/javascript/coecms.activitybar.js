@@ -288,7 +288,8 @@ $.uce.ActivityBar.prototype = {
         }
     },
     /*
-     * sets the class and color of every span when user info returns from the server
+     * sets the class of every span
+     * priority to the user's comment
      */
     _updateAllGroups: function(event) {
         var that = this;
@@ -305,32 +306,18 @@ $.uce.ActivityBar.prototype = {
             if(usersuid===undefined){
                 return;
             }
-            $.each(usersuid, function(i, from) {
-                var user = users[from];
-                if(_.isBoolean(user)===true || user === undefined) {
-                    return;
-                }
-                that._updateGroup(user, span);
-            });
+            if(_.include(usersuid, that.options.uceclient.uid)===true) {
+                span.attr("class", "");
+                span.addClass(that.options.class_self);
+                return;
+            }
+            // producteur OR personality
+            if ((_.intersection(that.options.speakers, usersuid)).length > 0){
+                span.attr("class", "");
+                span.addClass(that.options.class_personality);
+                return;
+            }
         });
-    },
-    _updateGroup: function(user, element) {
-        if(user.metadata===undefined || user.metadata.groups===undefined) {
-            return;
-        }
-        var groups = user.metadata.groups.split(",");
-        // producteur OR personality
-        if (_.include(this.options.speakers, user.uid)){
-            element.removeClass(this.options.class_default);
-            element.addClass(this.options.class_personality);
-            return;
-        }
-        // user is me
-        if (user.uid == this.options.uceclient.uid){
-            element.removeClass(this.options.class_default);
-            element.addClass(this.options.class_self);
-            return;
-        }
     },
     /*
      * UCE Event Callback
