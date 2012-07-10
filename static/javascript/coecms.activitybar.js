@@ -16,13 +16,14 @@ $.uce.ActivityBar.prototype = {
         uceclient: null,
         player: null,
         bins: 20,
+        speakers : [],
         class_default: "comment",
-        class_personality: "personnality-comment",
+        class_personality: "personality-comment",
         class_self: "user-comment",
         mouseoutdelay: 1000,
         mouseindelay: 1000,
-        ticker: null,
-        data: {},
+        eventTimeIndex: {},
+        eventUserIndex: {},
         duration: null
     },
 
@@ -31,10 +32,14 @@ $.uce.ActivityBar.prototype = {
      */
     meetingsEvents: {
         "videotag.message.new"          :   "_handleNewComment",
-        //"internal.user.received"        :   "_colorize",
         "videotag.message.vote"         :   "_handleVote",
         "videotag.message.delete"       :   "_handleDeleteComment",
         "videotag.message.owndelete"    :   "_handleDeleteOwnComment"
+/*        "pseudolivemanager.live.open"    : "_handleOpen",
+        "pseudolivemanager.live.close"   : "_handleClose",
+        "livemanager.live.open"          : "_handleOpen",
+        "livemanager.live.close"         : "_handleClose"
+*/
     },
     /*
      * UI initialize
@@ -43,6 +48,8 @@ $.uce.ActivityBar.prototype = {
         window.mouseOverHistogramBar = 0;
         window.lastMouseOverHistogram = null;
         window.lastMouseOutHistogram = null;
+        this.options.eventTimeIndex = {};
+        this.options.eventUserIndex = {};
         this._injectQueue = [];
         this._removeQueue = [];
         this._deferred = $.Deferred();
@@ -50,7 +57,6 @@ $.uce.ActivityBar.prototype = {
         this._updateLoop = window.setInterval(function(){
             that._resolveDeferred();
         }, 2000);
-        this.options.data = {};
         this._setTimers();
         this._setHovers();
         $(window).resize(function(){ that._setHovers(); });
@@ -112,8 +118,18 @@ $.uce.ActivityBar.prototype = {
         });
     },
     _resolveDeferred: function() {
+        if(this.options.duration===null){
+            if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
+                this.options.duration = this.options.player.data('uceplayer').getDuration();
+            } else {
+                return;
+            }
+        }
         if( this._deferred.state()==="pending") {
-            this._deferred.resolve();
+            var pipe = this._deferred.pipe(function(){ });
+            this._deferred.resolveWith(this);
+            pipe.done($.proxy(this._updateAllGroups, this));
+            this._deferred = $.Deferred();
             return;
         }
         if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
@@ -154,7 +170,7 @@ $.uce.ActivityBar.prototype = {
     },
     _setHovers: function(){
         var $videotickerFrame    = $('#videoticker-frame-comment'),
-            $videotickerTimeline = $('#videoticker-timeline'),
+            $videotickerTimeline = this.element,
             videotickerTimelineP = $videotickerTimeline.offset(),
             $videotickerFrameTotal = $videotickerFrame.find('.videoticker-frame-comment-total'),
             $videotickerFrameTotalSpan = $videotickerFrame.find('.videoticker-frame-comment-total span'),
@@ -189,26 +205,37 @@ $.uce.ActivityBar.prototype = {
      * Data structure
      */
     _addData: function(event) {
-        if(this.options.data[event.id]===false) {
-            delete this.options.data[event.id];
+        if(this.options.eventTimeIndex[event.id]===false) {
+            this._removeData(event.id);
             return false;
         }
-        this.options.data[event.id] = Math.round( event.metadata.currentTime );
+        this.options.eventTimeIndex[event.id] = Math.round( event.metadata.currentTime );
+        this.options.eventUserIndex[event.id] = event.from;
     },
     _removeData: function(eventid) {
-        if(this.options.data[eventid]===undefined) {
-            this.options.data[eventid]=false;
+        if(this.options.eventTimeIndex[eventid]===undefined) {
+            this.options.eventTimeIndex[eventid]=false;
+            this.options.eventUserIndex[eventid]=false;
             return false;
         }
-        delete this.options.data[eventid];
+        delete this.options.eventTimeIndex[eventid];
+        delete this.options.eventUserIndex[eventid];
     },
-    getCommentBar: function(time) {
-        if(parseInt(time, 10)<=0){
+    _getCommentBar: function(event) {
+        var id = null;
+        if(event.metadata.parent !== undefined) {
+            id = event.metadata.parent;
+        } else {
+            id = event.id;
+        }
+        var time = this.options.eventTimeIndex[id];
+        if(time<=0){
             return this.element.find('span').first();
         }
-        var duration = this.options.player.duration,
+        var duration = this.options.duration,
             binsDuration = Math.ceil(duration / this.options.bins);
-        return this.element.find("span:eq("+(Math.ceil(parseInt(time, 10)/binsDuration) - 1)+")");
+        var foundbar = this.element.find("span:eq("+(Math.ceil(time/binsDuration) - 1)+")");
+        return foundbar;
     },
     _incrementComment: function() {
         var event = this._injectQueue.pop();
@@ -218,65 +245,90 @@ $.uce.ActivityBar.prototype = {
         if(this._addData(event)===false) {
             return;
         }
-        if(this.options.data[event.id]===undefined) {
+        if(this.options.eventTimeIndex[event.id]===undefined) {
             return;
         }
-        var $span = this.getCommentBar(event.metadata.currentTime);
+        var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
-        // TODO this._colorize(event);
+        $span.data(event.id, event.metadata.currentTime);
+        var users = $span.data("users")!==undefined ? $span.data("users") : [];
+        users.push(event.from);
+        $span.data("users", users);
+        this._colorize(event, $span);
     },
     _decrementComment: function() {
         var event = this._removeQueue.pop();
         if(event===undefined) {
             return;
         }
-        if(this.options.data[event.metadata.parent]===undefined) {
+        if(this.options.eventTimeIndex[event.metadata.parent]===undefined) {
             return;
         }
-        var $span = this.getCommentBar(this.options.data[event.metadata.parent]);
+        var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
-        // TODO this._colorize(event);
+        var users = $span.data("users")!==undefined ? $span.data("users") : [];
+        var that = this;
+        $span.data("users", _.filter(users, function(uid){
+            return (uid !== that.options.eventUserIndex[event.metadata.parent]);
+        }));
+        this._colorize(event, $span);
         this._removeData(event.metadata.parent);
     },
     /*
-     * FIXME
-     * sets the class of a given bar
+     * sets the class and color of a single comment
      */
-    _colorize: function(span) {
-        /*if(event.metadata.user===undefined || event.metadata.user.metadata.groups===undefined) {
-            event.color = this.options.color_participant;
-            return;
+    _colorize: function(event, span) {
+        if(span===undefined) {
+            span = this._getCommentBar(event);
         }
-        var user = event.metadata.user;
-        var groups = event.metadata.user.metadata.groups.split(",");
-        // user is me
-        if (user.uid == this.options.uceclient.uid){
-            return;
+        if(span.attr("data-comment")==="0") {
+            span.attr("class", "");
+        } else {
+            span.addClass(this.options.class_default);
         }
-        // producteur OR personality
-        if (_.include(groups, 'producteur') || _.include(groups, 'personnalite')){
-            return;
-        }*/
+    },
+    /*
+     * sets the class of every span
+     * priority to the user's comment
+     */
+    _updateAllGroups: function(event) {
+        var that = this;
+        this.element.children("span").each(function(i) {
+            var span = $(this);
+            if(span.attr("data-comment")==="0") {
+                return;
+            }
+            var users = that.options.roster.getUsersState();
+            if (_.isObject(users)!==true){
+                return;
+            }
+            var usersuid = span.data("users");
+            if(usersuid===undefined){
+                return;
+            }
+            if(_.include(usersuid, that.options.uceclient.uid)===true) {
+                span.attr("class", "");
+                span.addClass(that.options.class_self);
+                return;
+            }
+            // producteur OR personality
+            if ((_.intersection(that.options.speakers, usersuid)).length > 0){
+                span.attr("class", "");
+                span.addClass(that.options.class_personality);
+                return;
+            }
+        });
     },
     /*
      * UCE Event Callback
      * injects a message along the waveform
      */
     _handleNewComment: function(event) {
+        this._injectQueue.push($.extend(true, {}, event));
         if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
             this._deferred = $.Deferred();
         }
-        this._injectQueue.push($.extend(true, {}, event));
-        this._deferred.done(this._incrementComment());
-        if(this.options.duration!==null){
-            this._resolveDeferred();
-            return;
-        }
-        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
-            this.options.duration = this.options.player.data('uceplayer').getDuration();
-            this._resolveDeferred();
-        } 
-
+        this._deferred.done($.proxy(this._incrementComment, this));
     },
     /*
      * Update Votes Viz
@@ -288,26 +340,31 @@ $.uce.ActivityBar.prototype = {
     * Delete a comment
     */
     _handleDeleteComment: function(event) {
+        this._removeQueue.push($.extend(true, {}, event));
         if(this._deferred.state()==="resolved" || this._deferred.state()==="rejected") {
             this._deferred = $.Deferred();
         }
-        this._removeQueue.push($.extend(true, {}, event));
-        this._deferred.done(this._decrementComment());
-        if(this.options.duration!==null){
-            this._resolveDeferred();
-            return;
-        }
-        if(this.options.player.data('uceplayer').getDuration() !== undefined && this.options.player.data('uceplayer').getDuration() > 0) {
-            this.options.duration = this.options.player.data('uceplayer').getDuration();
-            this._resolveDeferred();
-            return;
-        }
+        this._deferred.done($.proxy(this._decrementComment, this));
     },
     /**
      * Delete the user's comment
     */
     _handleDeleteOwnComment: function(event) {
         this._handleDeleteComment(event);
+    },
+    /*
+     * records unixtimes for starting and ending of a live
+     */
+    _handleOpen: function(event) {
+        this.options.endLive = null;
+        if(event.metadata.unixtime) {
+            this.options.startLive = event.metadata.unixtime;
+        }
+    },
+    _handleClose: function(event) {
+        if(event.metadata.unixtime && typeof this.options.startLive==="number") {
+            this.options.duration = Math.round((event.metadata.unixtime - this.options.startLive)/1000);
+        }
     },
     destroy: function() {
         this.element.find('*').remove();
