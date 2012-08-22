@@ -76,6 +76,8 @@ $.uce.ActivityBar.prototype = {
             }
             $(this).attr('data-timer', that._format(Math.round(binsDuration * i * 1000)));
             $(this).attr('data-currenttime', Math.round(binsDuration * i));
+            $(this).attr('title', "click to play video at "+
+                Math.round(binsDuration * i).timetoHours().toString());
             $(this).on("mouseover", function() {
                     window.mouseOverHistogramBar = 1;
                     if (window.lastMouseOverHistogram!==null) {
@@ -114,6 +116,12 @@ $.uce.ActivityBar.prototype = {
                             id: Date.now().toString()
                         });
                     }, that.options.mouseoutdelay);
+                })
+                .on("click", function(event){
+                    var seconds = $(this).attr("data-currenttime");
+                    if(seconds && seconds !== "") {
+                        that.options.player.data('uceplayer').seek(parseInt(seconds, 10));
+                    }
                 });
         });
     },
