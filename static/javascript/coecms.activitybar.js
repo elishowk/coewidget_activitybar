@@ -259,10 +259,12 @@ $.uce.ActivityBar.prototype = {
         var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
         $span.data(event.id, event.metadata.currentTime);
-        var users = $span.data("users")!==undefined ? $span.data("users") : [];
+        var users = [];
+        if ($span.data("users") instanceof Array === true ) {
+            users = $span.data("users");
+        }
         users.push(event.from);
         $span.data("users", users);
-        this._colorize(event, $span);
     },
     _decrementComment: function() {
         var event = this._removeQueue.pop();
@@ -274,26 +276,17 @@ $.uce.ActivityBar.prototype = {
         }
         var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
-        var users = $span.data("users")!==undefined ? $span.data("users") : [];
+        var users = [];
+        if ($span.data("users") instanceof Array === true ) {
+            users = $span.data("users");
+        }
         var that = this;
+        /* FIXME filter supprime toutes les participations d'un utilisateur si multiples => vide la liste des utilisateurs si 1 seul utilisateur dans l'intervalle
+         */
         $span.data("users", _.filter(users, function(uid){
             return (uid !== that.options.eventUserIndex[event.metadata.parent]);
         }));
-        this._colorize(event, $span);
         this._removeData(event.metadata.parent);
-    },
-    /*
-     * sets the class and color of a single comment
-     */
-    _colorize: function(event, span) {
-        if(span===undefined) {
-            span = this._getCommentBar(event);
-        }
-        if(span.attr("data-comment")==="0") {
-            span.attr("class", "");
-        } else {
-            span.addClass(this.options.class_default);
-        }
     },
     /*
      * sets the class of every span
@@ -304,7 +297,10 @@ $.uce.ActivityBar.prototype = {
         this.element.children("span").each(function(i) {
             var span = $(this);
             if(span.attr("data-comment")==="0") {
+                span.attr("class", "");
                 return;
+            } else {
+                span.addClass(that.options.class_default);
             }
             var users = that.options.roster.getUsersState();
             if (_.isObject(users)!==true){
