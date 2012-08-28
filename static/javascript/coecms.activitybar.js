@@ -260,7 +260,7 @@ $.uce.ActivityBar.prototype = {
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)+1);
         $span.data(event.id, event.metadata.currentTime);
         var users = [];
-        if ($span.data("users") instanceof Array === true ) {
+        if (_.isArray($span.data("users")) === true ) {
             users = $span.data("users");
         }
         users.push(event.from);
@@ -277,14 +277,20 @@ $.uce.ActivityBar.prototype = {
         var $span = this._getCommentBar(event);
         $span.attr("data-comment", parseInt($span.attr("data-comment"), 10)-1);
         var users = [];
-        if ($span.data("users") instanceof Array === true ) {
+        if (_.isArray($span.data("users")) === true ) {
             users = $span.data("users");
         }
         var that = this;
-        /* FIXME filter supprime toutes les participations d'un utilisateur si multiples => vide la liste des utilisateurs si 1 seul utilisateur dans l'intervalle
-         */
+        var decremented = false;
         $span.data("users", _.filter(users, function(uid){
-            return (uid !== that.options.eventUserIndex[event.metadata.parent]);
+            if (decremented===true) {
+                return true;
+            }
+            if (uid === that.options.eventUserIndex[event.metadata.parent]) {
+                decremented = true;
+                return false;
+            }
+            return true;
         }));
         this._removeData(event.metadata.parent);
     },
